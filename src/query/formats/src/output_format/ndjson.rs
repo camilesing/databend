@@ -160,7 +160,7 @@ mod test {
     use databend_common_expression::TableField;
     use pretty_assertions::assert_eq;
 
-    use crate::output_format::utils::gen_schema_and_block;
+    use crate::output_format::utils::{gen_schema_and_block, get_simple_block};
     use crate::output_format::utils::get_output_format_clickhouse;
     use crate::output_format::utils::test_data_block;
 
@@ -264,4 +264,22 @@ mod test {
     fn test_data_block_not_nullable() -> Result<()> {
         test_data_block(false)
     }
+    #[test]
+    pub fn test_ser_fail() -> Result<()> {
+        let (schema, block) =
+            gen_schema_and_block(vec![TableField::new("c1", TableDataType::String)], vec![
+                StringType::from_data(vec!["\0"]),
+            ]);
+
+        {
+            let mut formatter = get_output_format_clickhouse("ndjson", schema)?;
+            let buffer = formatter.serialize_block(&block)?;
+
+            let expect = b"{\"c1\":\"\\u0000\"}\n";
+            assert_eq!(&buffer, expect);
+        }
+
+        Ok(())
+    }
+
 }

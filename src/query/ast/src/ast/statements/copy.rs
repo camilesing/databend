@@ -30,6 +30,7 @@ use crate::ast::write_comma_separated_list;
 use crate::ast::write_comma_separated_map;
 use crate::ast::write_comma_separated_string_list;
 use crate::ast::write_comma_separated_string_map;
+use crate::ast::Expr;
 use crate::ast::Hint;
 use crate::ast::Identifier;
 use crate::ast::Query;
@@ -214,7 +215,6 @@ impl Display for CopyIntoTableOptions {
         if self.split_size != 0 {
             write!(f, " SPLIT_SIZE = {}", self.split_size)?;
         }
-
         write!(f, " PURGE = {}", self.purge)?;
         write!(f, " FORCE = {}", self.force)?;
         write!(f, " DISABLE_VARIANT_CHECK = {}", self.disable_variant_check)?;
@@ -259,6 +259,7 @@ pub struct CopyIntoLocationStmt {
     pub dst: FileLocation,
     pub file_format: FileFormatOptions,
     pub options: CopyIntoLocationOptions,
+    pub partition_by: Option<Vec<Expr>>,
 }
 
 impl Display for CopyIntoLocationStmt {
@@ -276,6 +277,12 @@ impl Display for CopyIntoLocationStmt {
         if !self.file_format.is_empty() {
             write!(f, " FILE_FORMAT = ({})", self.file_format)?;
         }
+
+        if let Some(partition_by) = &self.partition_by {
+            write!(f, " PARTITION BY ")?;
+            write_comma_separated_list(f, partition_by)?;
+        }
+
         write!(f, " SINGLE = {}", self.options.single)?;
         write!(f, " MAX_FILE_SIZE = {}", self.options.max_file_size)?;
         write!(f, " DETAILED_OUTPUT = {}", self.options.detailed_output)?;

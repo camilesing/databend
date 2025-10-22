@@ -36,6 +36,7 @@ use databend_common_meta_app::principal::COPY_MAX_FILES_PER_COMMIT;
 use databend_common_meta_app::schema::CatalogInfo;
 use databend_common_metrics::storage::*;
 use databend_common_storage::init_stage_operator;
+use databend_common_ast::ast::Expr;
 use log::info;
 use opendal::Operator;
 
@@ -144,7 +145,6 @@ pub struct CopyIntoTablePlan {
     pub files_collected: bool,
 
     pub dedup_full_path: bool,
-    pub path_prefix: Option<String>,
 }
 
 fn get_path_prefix(op: &Operator) -> String {

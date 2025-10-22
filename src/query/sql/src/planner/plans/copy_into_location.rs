@@ -15,6 +15,7 @@
 use std::fmt::Debug;
 use std::fmt::Formatter;
 
+use databend_common_ast::ast::Expr;
 use databend_common_expression::types::DataType;
 use databend_common_expression::types::NumberDataType;
 use databend_common_expression::DataField;
@@ -28,6 +29,7 @@ use crate::plans::Plan;
 pub struct CopyIntoLocationPlan {
     pub info: CopyIntoLocationInfo,
     pub from: Box<Plan>,
+    pub partition_by: Option<Vec<Expr>>,
 }
 
 impl CopyIntoLocationPlan {
@@ -52,8 +54,8 @@ impl Debug for CopyIntoLocationPlan {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Copy into {:?}/{} from {:?}",
-            self.info.stage, self.info.path, self.from
+            "Copy into {:?}/{} from {:?} partition by {:?}",
+            self.info.stage, self.info.path, self.from, self.partition_by
         )?;
         Ok(())
     }

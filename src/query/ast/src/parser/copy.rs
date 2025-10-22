@@ -114,6 +114,7 @@ fn copy_into_location(i: Input) -> IResult<Statement> {
                 dst,
                 file_format: Default::default(),
                 options: Default::default(),
+                partition_by: Default::default(),
             };
             for opt in opts {
                 copy_stmt.apply_option(opt);

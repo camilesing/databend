@@ -14,14 +14,22 @@
 
 use std::sync::Arc;
 
+use databend_common_ast::ast::Expr;
 use databend_common_base::runtime::GlobalIORuntime;
+use databend_common_exception::ErrorCode;
 use databend_common_exception::Result;
 use databend_common_expression::infer_table_schema;
+use databend_common_functions::BUILTIN_FUNCTIONS;
 use databend_common_meta_app::schema::UpdateStreamMetaReq;
 use databend_common_pipeline_core::ExecutionInfo;
+use databend_common_sql::executor::cast_expr_to_non_null_boolean;
+use databend_common_sql::Metadata;
+use databend_common_sql::NameResolutionContext;
+use databend_common_sql::ScalarBinder;
 use databend_storages_common_stage::CopyIntoLocationInfo;
 use log::debug;
 use log::info;
+use parking_lot::RwLock;
 
 use crate::interpreters::common::check_deduplicate_label;
 use crate::interpreters::common::dml_build_update_stream_req;
@@ -84,11 +92,57 @@ impl CopyIntoLocationInterpreter {
         &self,
         query: &Plan,
         info: &CopyIntoLocationInfo,
+        partition_by: &Option<Vec<Expr>>,
     ) -> Result<(PipelineBuildResult, Vec<UpdateStreamMetaReq>)> {
         let (query_interpreter, update_stream_meta_req) = self.build_query(query).await?;
         let query_physical_plan = query_interpreter.build_physical_plan().await?;
         let query_result_schema = query_interpreter.get_result_schema();
         let table_schema = infer_table_schema(&query_result_schema)?;
+
+        let inner_partition_by = if let Some(expr) = &partition_by {
+            let mut name_expr_pairs = Vec::with_capacity(expr.len());
+
+            let (_, _, bind_context, _) = match query {
+                Plan::Query {
+                    s_expr,
+                    metadata,
+                    bind_context,
+                    formatted_ast,
+                    ..
+                } => (s_expr, metadata, bind_context, formatted_ast),
+                v => unreachable!("Input plan must be Query, but it's {}", v),
+            };
+
+            for e in expr {
+                let metadata = Metadata::default();
+                let name_resolution_ctx = NameResolutionContext::try_from(self.ctx.clone())?;
+                let mut bind_context = bind_context.unwrap();
+                // 使用ScalarBinder来检查表达式类型
+                let mut scalar_binder = ScalarBinder::new(
+                    &mut bind_context,
+                    self.ctx.clone(),
+                    &name_resolution_ctx,
+                    metadata,
+                    &[],
+                );
+
+                let (scalar, _) = scalar_binder.bind(e).await?;
+                let data_type = scalar.data_type();
+
+                if !data_type.is_string() {
+                    return Err(format!(
+                        "COPY INTO LOCATION: PARTITION BY expressions must return string type, got {}",
+                        data_type
+                    ));
+                }
+
+                name_expr_pairs.push((e.to_string()));
+            }
+
+            Some(name_expr_pairs)
+        } else {
+            None
+        };
 
         let mut physical_plan = PhysicalPlan::new(CopyIntoLocation {
             input: query_physical_plan,
@@ -97,6 +151,7 @@ impl CopyIntoLocationInterpreter {
             input_table_schema: table_schema,
             info: info.clone(),
             meta: PhysicalPlanMeta::new("CopyIntoLocation"),
+            partition_by: inner_partition_by,
         });
 
         let mut next_plan_id = 0;
@@ -128,7 +183,11 @@ impl Interpreter for CopyIntoLocationInterpreter {
         }
 
         let (mut pipeline_build_result, update_stream_reqs) = self
-            .build_local_copy_into_stage_pipeline(&self.plan.from, &self.plan.info)
+            .build_local_copy_into_stage_pipeline(
+                &self.plan.from,
+                &self.plan.info,
+                &self.plan.partition_by,
+            )
             .await?;
 
         // We are going to consuming streams, which are all of the default catalog
